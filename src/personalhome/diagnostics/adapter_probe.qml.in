@@ -1,0 +1,89 @@
+import QtQuick 2.4
+import QtQuick.Window 2.2
+import TextFile 1.0
+import "FocusHandler.js" as FocusHandler
+
+Item {
+    id: ysm
+    objectName: "adapterProbe"
+    width:1920;height:1080
+    state: "visible"
+    property bool initialized: false
+    readonly property bool readyForActivation: personalHomeLoader.status===Loader.Ready
+        && personalHomeLoader.item!==null && personalHomeLoader.item.readyForActivation
+    property int sequence: 0
+    property double startedAt: 0
+    property var simulatedActions: []
+    property var writer: TextFile { name: @@HEALTH_URL@@ }
+    property var compositorWindow: ysm.Window.window
+    function gotoState(value) { state=value; }
+    property QtObject appList: QtObject { function getAppInfoValue(id,key) { return ""; } }
+    property QtObject hcapSurfaceView: QtObject { function isInputAppSurface(surface) { return false; } }
+    property QtObject launchPointsModel: QtObject {
+        function getLaunchPointByAppId(appId) { return {id:appId}; }
+    }
+    function launchPointActivated(item, issued) {
+        ysm.appManagerService.checkLaunch(item.id, JSON.stringify(item.params || {}), false, false, "launcher", issued);
+    }
+    property QtObject appManagerService: QtObject {
+        signal launched(string identifier, int token)
+        signal launchFailed(string identifier, int token, int errorCode)
+        function checkLaunch(appId,params,update,install,reason,issued) {
+            ysm.simulatedActions=ysm.simulatedActions.concat([{id:appId,params:params}]);
+            if (typeof issued === "function") issued(1);
+            launched(appId,1);
+        }
+    }
+    property QtObject notificationView: QtObject { property bool modalAlertActive: false }
+    Item {
+        id:globalActions
+        property int layerNumber:4
+        property bool popupOpen:false
+        function toggleInputs(value) {popupOpen=!popupOpen;if(popupOpen)ysm.gotoState("hidden");}
+    }
+    QtObject { id:t1;property bool running:false }
+    QtObject {
+        id:systemSettings
+        property string powerState:"Active"
+        property string powerProcessing:""
+        property string personalHomeSsid:"Isolated probe"
+    }
+    FocusScope {
+        id:uiScope
+        anchors.fill:parent
+        property int layerNumber:3
+@@ADAPTER@@
+        Item {
+            id:superRibbon
+            state:"home"
+            function takeFocus(force) { forceActiveFocus(); }
+            property QtObject launcherRibbon: QtObject {
+                signal launchPointActivated(variant item,int index)
+                onLaunchPointActivated: ysm.simulatedActions=ysm.simulatedActions.concat([{point:item,index:index}])
+            }
+        }
+    }
+    function diagnosticSnapshot() {
+        var item=personalHomeLoader.item;
+        return {
+            schema:1,nonce:@@NONCE@@,sequence:++sequence,
+            probe:"isolated-adapter",compositorContext:"simulated",nativeContextAttached:false,
+            windowAttached:!!ysm.Window.contentItem,physicalRenderingProven:false,
+            harnessInitialized:initialized,moduleResolved:personalHomeLoader.status===Loader.Ready,
+            componentInstantiated:item!==null,initialized:!!item && item.diagnosticInitialized,
+            loaderStatus:personalHomeLoader.status,ready:!!item && item.readyForActivation,
+            shown:uiScope.personalHomeShown,visible:!!item && item.visible,
+            activeFocus:!!item && item.activeFocus,focusIndex:item ? item.focusIndex : -1,
+            keyEvents:item ? item.diagnosticKeyCount : 0,lastKey:item ? item.diagnosticLastKey : 0,
+            originalFallback:!uiScope.personalHomeEnabled
+        };
+    }
+    Component.onCompleted: {startedAt=Date.now();initialized=true;FocusHandler.requestFocus(uiScope);}
+    Timer {
+        interval:250;repeat:true;running:ysm.initialized
+        onTriggered: {
+            ysm.writer.write(JSON.stringify(ysm.diagnosticSnapshot()));
+            if(Date.now()-ysm.startedAt>=10000)stop();
+        }
+    }
+}
