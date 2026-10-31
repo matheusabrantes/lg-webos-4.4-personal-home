@@ -25,6 +25,12 @@ mkdir -p src/personalhome/qa
 
 The preview uses local assets and does not connect to the TV. Full UI tests also require those assets. Asset conversion scripts additionally use FontTools and Brotli and retain references to the owner's historical input assets.
 
+## Native build preparation
+
+The integration builder is `src/personalhome/integration/build_candidate.py`; release assembly is in `src/personalhome/operations/build_release.py`. They depend on the exact original compositor, extracted matching QML/resources, and verified baseline manifests. Those private inputs are intentionally absent from Git. The dated local paths in the builders describe the recorded preparation environment, not a portable build recipe.
+
+Read [architecture](architecture.md), [recorded status](status.md), and [device safety](device-safety.md) before preparing a new baseline. A fresh clone supports the documented offline checks and a locally configured preview; it cannot build or install a native release without the matching firmware inputs. No device connection or system executable overwrite is part of repository setup.
+
 ## Private device inputs
 
 Keep SSH keys, known-host records, and connection settings under `.local/`. Never commit the actual connection settings or a private key. Device scripts require the exact matching firmware inputs and a new authorization appropriate to the requested action.

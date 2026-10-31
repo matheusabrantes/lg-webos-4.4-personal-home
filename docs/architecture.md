@@ -13,3 +13,18 @@ Two local actors monitor identity, integrity, peer pulses, and interface health.
 Recovery removes only its own verified overlay and attempts to restore the original compositor and a usable context. Restoring the executable hash and restoring a usable foreground are separate results. Neither a live PID nor a progressing timer proves that the user can operate the TV.
 
 Original LG resources, extracted executables, private wallpapers, and release-specific state are external inputs. The repository contains integration code, not a redistributable firmware image or a universal installer.
+
+## Source layout
+
+| Path | Purpose |
+| --- | --- |
+| `src/personalhome/qml/` | Interface, navigation logic, and non-personal assets |
+| `src/personalhome/operations/runtime/` | Startup, validation, installation, and recovery actors |
+| `src/personalhome/operations/` | Release preparation, controlled sessions, and runtime tests |
+| `src/personalhome/integration/` | Firmware-specific integration builder and QML adapter |
+| `src/personalhome/diagnostics/` | Isolated compatibility probes and diagnostic helpers |
+| `src/personalhome/tests/` | Interface, integration, and recovery tests |
+| `tools/` | Repository-level development helpers |
+| `docs/` | Architecture, development, device safety, and recorded limitations |
+
+Historical experiments and owner data are retained locally but excluded from Git. They are not an alternative supported installation path.
