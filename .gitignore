@@ -1,0 +1,46 @@
+# Owner data and compatibility paths are local only.
+/.local/
+/work/
+/outputs/
+/src/lg-native-home-feasibility-2026-10-22/
+
+# Historical reports and device state are preserved locally.
+/src/personalhome/**/*.md
+/src/personalhome/**/*.json
+/src/personalhome/**/*.jsonl
+/src/personalhome/**/*.log
+/src/personalhome/**/private/
+/src/personalhome/**/native/
+/src/personalhome/**/evidence/
+/src/personalhome/**/baseline/
+/src/personalhome/**/source-ui/
+/src/personalhome/**/build/
+/src/personalhome/qa/
+
+# Generated packages, personal wallpapers, and captures.
+*.tgz
+*.tar
+*.tar.gz
+*.zip
+*.ipk
+*.sqlite
+*.sqlite3
+*.db
+*.jpg
+*.jpeg
+*.webp
+*.png
+!/src/personalhome/qml/assets/*.png
+
+# Local environments and tools.
+.venv/
+venv/
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store
+.env
+.env.*
+!.env.example
+*.pem
+*.key
