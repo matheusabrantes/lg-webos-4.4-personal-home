@@ -55,7 +55,42 @@
 *.HEIC
 *.heic
 *.png
-!/src/personalhome/qml/assets/*.png
+*.PNG
+
+# Only reviewed interface icons and sanitized documentation images may be added.
+!/src/personalhome/qml/assets/abrantesflix.png
+!/src/personalhome/qml/assets/apple-tv.png
+!/src/personalhome/qml/assets/back-dark.png
+!/src/personalhome/qml/assets/back-white.png
+!/src/personalhome/qml/assets/card-focused.png
+!/src/personalhome/qml/assets/card.png
+!/src/personalhome/qml/assets/dock.png
+!/src/personalhome/qml/assets/dropdown-av-dark.png
+!/src/personalhome/qml/assets/dropdown-av-gray.png
+!/src/personalhome/qml/assets/dropdown-av-white.png
+!/src/personalhome/qml/assets/dropdown-hdmi-dark.png
+!/src/personalhome/qml/assets/dropdown-hdmi-gray.png
+!/src/personalhome/qml/assets/dropdown-hdmi-white.png
+!/src/personalhome/qml/assets/dropdown-tv-dark.png
+!/src/personalhome/qml/assets/dropdown-tv-gray.png
+!/src/personalhome/qml/assets/dropdown-tv-white.png
+!/src/personalhome/qml/assets/dropdown-usb-dark.png
+!/src/personalhome/qml/assets/dropdown-usb-gray.png
+!/src/personalhome/qml/assets/dropdown-usb-white.png
+!/src/personalhome/qml/assets/inputs-dark.png
+!/src/personalhome/qml/assets/inputs-white.png
+!/src/personalhome/qml/assets/netflix.png
+!/src/personalhome/qml/assets/prime-video.png
+!/src/personalhome/qml/assets/settings-dark.png
+!/src/personalhome/qml/assets/settings-white.png
+!/src/personalhome/qml/assets/store-dark.png
+!/src/personalhome/qml/assets/store-white.png
+!/src/personalhome/qml/assets/tv.png
+!/src/personalhome/qml/assets/wifi-dark.png
+!/src/personalhome/qml/assets/wifi-white.png
+!/src/personalhome/qml/assets/youtube.png
+!/docs/assets/personalhome-home.jpg
+!/docs/assets/personalhome-inputs.jpg
 
 # Local environments and tools.
 .venv/
