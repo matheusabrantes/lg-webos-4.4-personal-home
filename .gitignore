@@ -1,14 +1,34 @@
 # Owner data and compatibility paths are local only.
 /.local/
-/work/
+/work/*
+!/work/abrantesflix/
+/work/abrantesflix/*
+!/work/abrantesflix/tv.py
 /outputs/
 /src/lg-native-home-feasibility-2026-10-22/
+
+# Publish maintained source areas, not the dated experiment archive.
+/src/personalhome/*
+!/src/personalhome/qml/
+!/src/personalhome/integration/
+!/src/personalhome/tools/
+!/src/personalhome/tests/
+!/src/personalhome/recovery/
+!/src/personalhome/diagnostics/
+!/src/personalhome/operations/
+!/src/personalhome/privacy-hardening-20261022/
+!/src/personalhome/finalization-20261022/
+/src/personalhome/finalization-20261022/*
+!/src/personalhome/finalization-20261022/privacy/
 
 # Historical reports and device state are preserved locally.
 /src/personalhome/**/*.md
 /src/personalhome/**/*.json
 /src/personalhome/**/*.jsonl
 /src/personalhome/**/*.log
+/src/personalhome/**/.gitignore
+/src/personalhome/**/*.txt
+!/src/personalhome/qml/assets/*.txt
 /src/personalhome/**/private/
 /src/personalhome/**/native/
 /src/personalhome/**/evidence/
@@ -16,6 +36,7 @@
 /src/personalhome/**/source-ui/
 /src/personalhome/**/build/
 /src/personalhome/qa/
+/src/personalhome/production-recovery-20261023
 
 # Generated packages, personal wallpapers, and captures.
 *.tgz
@@ -28,7 +49,11 @@
 *.db
 *.jpg
 *.jpeg
+*.JPG
+*.JPEG
 *.webp
+*.HEIC
+*.heic
 *.png
 !/src/personalhome/qml/assets/*.png
 

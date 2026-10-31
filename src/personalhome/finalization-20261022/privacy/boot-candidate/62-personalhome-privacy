@@ -1,0 +1,3 @@
+#!/bin/sh
+umask 077
+/usr/bin/node /var/lib/personalhome-privacy/boot-flags.js < /dev/null > /var/lib/personalhome-privacy/boot-status.log 2>&1 &

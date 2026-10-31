@@ -1,0 +1,20 @@
+import QtQuick 2.4
+import QtQuick.Window 2.2
+Window {
+    id:root
+    visible:false
+    Item { id:ownItem }
+    Window { id:other;visible:false;Item { id:foreignItem } }
+    Component { id:itemFactory;Item {} }
+    property var detachedItem:null
+    function attached(item) { return @@ATTACHED_EXPRESSION@@; }
+    function expectedWindow(item) {
+        return attached(item) && item.Window.contentItem===root.contentItem;
+    }
+    readonly property bool ownContentExists:!!ownItem.Window.contentItem
+    readonly property bool missingWindowApi:typeof ownItem.Window.window==="undefined"
+    readonly property bool foreignRejected:!expectedWindow(foreignItem)
+    readonly property bool detachedRejected:detachedItem!==null && !attached(detachedItem)
+    readonly property bool readyForActivation:expectedWindow(ownItem) && foreignRejected && detachedRejected
+    Component.onCompleted:detachedItem=itemFactory.createObject(null)
+}
