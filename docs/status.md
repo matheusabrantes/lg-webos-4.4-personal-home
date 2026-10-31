@@ -1,19 +1,38 @@
 # Recorded device status
 
-Last recorded device session: **October 23, 2026**. Repository migration: **October 31, 2026**. No live TV verification is performed by this migration.
+As of October 31, 2026, PersonalHome is permanently enabled on the recorded LG
+49UK6310PSE running firmware 05.50.70, webOS 4.4.0 and Qt 5.6.2. Original LG
+executable and configuration backups remain available to the recovery guards.
 
-PersonalHome was left enabled for provisional normal use at the owner's request. The recorded final state showed the native scene visible, directional focus active, 21 photos, and startup enabled. This is historical evidence, not a claim about the TV's current state.
+The owner confirmed that Power starting from a playing TV channel opens
+PersonalHome first, without Live TV picture or sound, and with responsive controls.
+Abrantesflix-button wake also passed. Native readback confirmed the expected wake
+reasons, composed and focused Home, current activation, fresh guards and a
+persistent startup hook without an expiry or disabled latch.
 
-Recorded successful checks included native navigation and pointer use, two controlled recovery cases with Abrantesflix, HDMI picture/sound and volume/mute, USB video/subtitles, Netflix playback, and a short stability observation after a real boot.
+The latest full boot reached composed and focused Home. Cold first-image and
+silent-start observations come from earlier packages with the same cold-stream
+close implementation; the owner did not repeat those observations on the latest
+package.
 
-The following remain material limitations:
+## Validation
 
-- Cold startup can be delayed and show the original LG interface before PersonalHome. No controlled boot-speed improvement was established.
-- Complete recovery acceptance was not achieved. A later manual rollback restored the original executable but reported `usableInterface: false`; the earlier successful controlled cases do not erase that result.
-- Optional privacy preferences and agreements were off, but `uploader.analyticsLog` was observed enabled in one readback. The project does not claim zero telemetry.
-- Apple TV reached login by choosing the existing-version start option. It was not updated and complete Apple playback was not established.
-- Overnight behavior, extended stability, and all remaining production-readiness gates were not completed.
+| Check | Recorded result |
+| --- | --- |
+| Power from playing Live TV | Owner confirmed first Home, no TV picture or sound, and normal controls |
+| Abrantesflix-button wake | Owner confirmed app picture and controls; native app foreground matched |
+| Native Power controller | Five focused offline tests passed |
+| Guard and cold-stream close | 67 guard cases and nine close cases passed on TV Node 0.12.2, with device operations mocked |
+| Startup bridge and readiness service | 17 bridge tests, nine service tests and the joined protocol replay passed |
+| Native compatibility | Changed QML compiled in memory on target Qt 5.6.2 without constructing a scene or window |
+| Recovery | Original LG recovery was verified before the accepted installation; backups and guards remain available |
+| Natural standby longer than one hour | Pending |
 
-A stale launch-error dialog was corrected before the provisional-use installation. Repository organization does not add new physical acceptance to that change.
+These results cover targeted startup and wake behavior on one TV. Long standby,
+overnight stability and compatibility with other models or firmware remain
+unverified. This work does not establish a startup-speed improvement or complete
+application and playback coverage.
 
-Personal captures, raw logs, backups, release manifests, and historical authorizations are retained locally and excluded from GitHub. Treat their original timestamps and release identities as part of the evidence.
+See [startup reliability](startup-reliability.md) for the implementation and
+[device safety](device-safety.md) before using device tools. Raw session records,
+personal captures and release-specific recovery state remain local.

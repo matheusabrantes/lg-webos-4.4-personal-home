@@ -1,0 +1,21 @@
+{
+  "id": "com.personalhome.startup",
+  "version": "1.0.0",
+  "vendor": "PersonalHome",
+  "type": "web",
+  "main": "index.html",
+  "title": "PersonalHome startup",
+  "icon": "icon.png",
+  "visible": false,
+  "transparent": false,
+  "noSplashOnLaunch": true,
+  "spinnerOnLaunch": false,
+  "bgColor": "#000000",
+  "handlesRelaunch": true,
+  "bootLaunchParams": {
+    "boot": true
+  },
+  "resolution": "1920x1080",
+  "inspectable": false,
+  "requiredACG": []
+}

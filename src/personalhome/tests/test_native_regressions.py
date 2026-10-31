@@ -22,7 +22,7 @@ class NativeRegressions(unittest.TestCase):
         native = builder.EVIDENCE / 'resources/ysm/YSM'
         cls.resources = builder.integrate({
             'YSM/' + name: (native / name).read_bytes()
-            for name in ['YSM.qml', 'SystemSettings.qml']
+            for name in ['YSM.qml', 'SystemSettings.qml', 'compositor.js', 'StarfishKeyFilter.qml']
         })
         for name in ['Common/FocusHandler.js', 'HomeToHiddenAnimation.qml']:
             cls.resources['YSM/' + name] = (native / name).read_bytes()

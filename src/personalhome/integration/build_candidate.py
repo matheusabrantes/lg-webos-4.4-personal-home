@@ -23,6 +23,89 @@ def replace_once(text, old, new):
     return text.replace(old, new, 1)
 
 
+def preserve_startup_home(text):
+    old = 'id: launcherOnBootTimer\n        interval: ysm.launcherOnBootTimeout\n        onTriggered: ysm.gotoState("hidden")'
+    new = old.replace('onTriggered: ', 'onTriggered: if (!uiScope.personalHomeShown) ')
+    if new in text:
+        return text
+    return replace_once(text, old, new)
+
+
+def integrate_power_wake(resources):
+    text = resources['YSM/YSM.qml'].decode()
+    if 'function personalHomeStartupPending()' not in text:
+        anchor = '    objectName: "ysm"'
+        text = replace_once(text, anchor, anchor + '\n' + (ROOT / 'integration/startup_hold.qml.inc').read_text())
+        text = replace_once(text, '            if (ysm.allowEmptyFullScreen)\n                ret.reason = "forceMinimize";',
+                            '            if (ysm.allowEmptyFullScreen || ysm.personalHomeStartupEmptyHold(ret.foregroundAppInfo))\n                ret.reason = "forceMinimize";')
+    else:
+        marker = '    property var personalHomeStartupIntentFile: TextFile'
+        if text.count(marker) != 1:
+            raise ValueError('Native startup-hold insertion anchor changed or is ambiguous')
+        start = text.index(marker)
+        end = text.index('    property string appId:', start)
+        text = text[:start] + (ROOT / 'integration/startup_hold.qml.inc').read_text() + '\n' + text[end:]
+    alias = '    property alias personalHomePowerWake: personalHomePowerWakeController'
+    if text.count(alias) > 1:
+        raise ValueError('Native Power-wake alias is ambiguous')
+    if alias not in text:
+        text = replace_once(text, '    objectName: "ysm"', '    objectName: "ysm"\n' + alias)
+    for event, method in [('onSystemSuspended', 'nativePowerOff'), ('onSystemPowerOff', 'nativePowerOff'), ('onSystemPowerOn', 'nativePowerOn')]:
+        old = '        ' + event + ': {'
+        new = old + '\n            ysm.personalHomePowerWake.' + method + '();'
+        if new not in text:
+            text = replace_once(text, old, new)
+    if 'id: personalHomePowerWakeController' not in text:
+        anchor = '        property bool personalHomeEnabled: true'
+        text = replace_once(text, anchor, (ROOT / 'integration/power_wake.qml.inc').read_text() + '\n' + anchor)
+        text = replace_once(text, '        function showHome(msg) {\n            ysm.goHome();', '        function showHome(msg) {\n            if (ysm.personalHomePowerWake.nativeShowHome()) return;\n            ysm.goHome();')
+        text = replace_once(text, '            function handleAction(action) {', '            function handleAction(action) {\n                ysm.personalHomePowerWake.cancel();')
+        text = replace_once(text, '            onLaunchRequested: {', '            onLaunchRequested: {\n                ysm.personalHomePowerWake.cancel();')
+    marker = '        QtObject {\n            id: personalHomePowerWakeController'
+    if text.count(marker) != 1:
+        raise ValueError('Native Power-wake insertion anchor changed or is ambiguous')
+    start = text.index(marker)
+    end = text.index('        property bool personalHomeEnabled: true', start)
+    text = text[:start] + (ROOT / 'integration/power_wake.qml.inc').read_text() + '\n' + text[end:]
+    old = '            if (superRibbon.state === "home") {\n                gotoState("hidden");'
+    new = old.replace('                gotoState', '                if (uiScope.personalHomeShown && !ysm.personalHomePowerWake.resumePausedInput()) return;\n                gotoState')
+    if new not in text:
+        text = replace_once(text, old, new)
+    old = '                if (action === "back") {\n                    forgetLaunch();'
+    new = old.replace('                    forgetLaunch();', '                    if (!ysm.personalHomePowerWake.resumePausedInput()) { item.completeAction(false, "Não foi possível voltar à TV."); return; }\n                    forgetLaunch();')
+    if new not in text:
+        text = replace_once(text, old, new)
+    text = text.replace('function handleAction(action) {\n                ysm.personalHomePowerWake.cancel();',
+                        'function handleAction(action) {\n                ysm.personalHomePowerWake.cancel(action === "inputs");')
+    old = '            if (ysm.state == "visible") {\n                ysm.gotoState("hidden", function() {\n                    if(superRibbon.state !== "home")'
+    new = old.replace('ysm.state == "visible"', 'ysm.state == "visible" && !uiScope.personalHomeShown')
+    if new not in text:
+        text = replace_once(text, old, new)
+    resources['YSM/YSM.qml'] = text.encode()
+    text = resources['YSM/compositor.js'].decode()
+    anchor = '        if (ysm.state === "visible"\n            && !ysm.foregroundSufaceWasHidden'
+    legacy = anchor + '\n            && !ysm.personalHomePowerWake.keepHomeForSurface(compositor.fullscreen)'
+    replacement = '        var personalHomeWakeKeep = ysm.personalHomePowerWake.keepHomeForSurface(compositor.fullscreen);\n' + anchor + '\n            && !personalHomeWakeKeep'
+    if replacement not in text:
+        if legacy in text:
+            text = replace_once(text, legacy, anchor)
+        text = replace_once(text, anchor, replacement)
+    resources['YSM/compositor.js'] = text.encode()
+    text = resources['YSM/StarfishKeyFilter.qml'].decode()
+    anchor = '    function preProcess(key, pressed, autoRepeat) {\n        speakKeyEvents(key, pressed);'
+    legacy = anchor + '\n        if (pressed && key !== Qt.Key_PowerOff) ysm.personalHomePowerWake.cancel();'
+    previous = anchor + '\n        if (pressed && key !== Qt.Key_PowerOff) ysm.personalHomePowerWake.cancel(key === Qt.Key_Left || key === Qt.Key_Right || key === Qt.Key_Up || key === Qt.Key_Down || key === Qt.Key_Return || key === Qt.Key_Enter);'
+    replacement = previous.replace('key !== Qt.Key_PowerOff', 'key !== Qt.Key_PowerOff && key !== 0x01200201 && key !== 0x01200202')
+    if replacement not in text:
+        if previous in text:
+            text = replace_once(text, previous, anchor)
+        elif legacy in text:
+            text = replace_once(text, legacy, anchor)
+        text = replace_once(text, anchor, replacement)
+    resources['YSM/StarfishKeyFilter.qml'] = text.encode()
+    return resources
+
+
 def patch_elf(data):
     if digest(data) != SOURCE_SHA or data[:7] != b'\x7fELF\x01\x01\x01':
         raise ValueError('Firmware executable identity mismatch')
@@ -81,6 +164,7 @@ def integrate(resources):
     target = '    FocusableView {\n        id: uiScope\n        objectName: "uiScope"\n'
     changed = replace_once(original, target, target + '\n' + insertion)
     changed = integrate_input_back(changed)
+    changed = preserve_startup_home(changed)
     old = '            visible: anchors.bottomMargin > 80 - hideMargin'
     changed = replace_once(changed, old, old + ' && !uiScope.personalHomeOwnsRibbon\n            enabled: !uiScope.personalHomeOwnsRibbon')
     changed = replace_once(changed,
@@ -126,7 +210,7 @@ def integrate(resources):
     target = '            if (method === getStatusMethod)\n                var ret = JSON.parse(payload);\n                if (ret.returnValue) {'
     changed = replace_once(changed, target, target + '\n                    root.personalHomeSsid = ret.wifi && ret.wifi.state === "connected" && typeof ret.wifi.ssid === "string" ? ret.wifi.ssid : "";')
     resources['YSM/SystemSettings.qml'] = changed.encode()
-    return resources
+    return integrate_power_wake(resources)
 
 
 def build(destination, qml_dir=None, evidence=EVIDENCE):
@@ -163,8 +247,8 @@ def build(destination, qml_dir=None, evidence=EVIDENCE):
         'sourceSha256': SOURCE_SHA, 'candidateSha256': digest(candidate),
         'candidateBytes': len(candidate), 'changedByteOffsets': changed,
         'literalByteRange': [IMPORT_DATA_OFFSET, IMPORT_DATA_OFFSET + 10],
-        'unchangedNativeResources': len(resources) - 2,
-        'modifiedNativeResources': ['YSM/YSM.qml', 'YSM/SystemSettings.qml'],
+        'unchangedNativeResources': len(resources) - 4,
+        'modifiedNativeResources': ['YSM/YSM.qml', 'YSM/SystemSettings.qml', 'YSM/compositor.js', 'YSM/StarfishKeyFilter.qml'],
         'addedFiles': {name: digest(value) for name, value in additions.items()},
         'moduleFiles': {name: digest(value) for name, value in {**resources, **additions}.items()},
         'requiredRuntimeModulePath': '/tmp/YSM',

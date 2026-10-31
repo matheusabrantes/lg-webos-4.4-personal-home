@@ -6,7 +6,9 @@ PersonalHome is a QML scene integrated with the existing LG compositor. It is no
 
 The integration adapter uses native launchpoints and application-manager helpers. An accepted launch request does not establish that an application rendered or that playback works. Update and login dialogs remain owned by their applications and the LG platform.
 
-The runtime bootstrap verifies the release and original compositor, waits for native readiness, and coordinates activation. The guarded implementation still restarts the compositor after the native environment settles. This two-stage startup is a recorded source of delay and can expose the original LG interface before PersonalHome becomes available.
+The runtime bootstrap verifies the release and original compositor, waits for native readiness, and coordinates one guarded activation restart. Its durable journal distinguishes preparation before the bind mount from an applying or verified transaction. Only a validated pre-bind interruption may retry on a later boot.
+
+A silent first-app bridge covers startup until native Home composition and focus are verified through a nonce-bound readiness service. Cold startup closes the fresh, unmanaged broadcast stream when no real input app owns the lifecycle. Native Power handling reads the wake reason at `LastInput Ready`/`Screen On` and preserves app-button intent. See [startup reliability](startup-reliability.md).
 
 Two local actors monitor identity, integrity, peer pulses, and interface health. Visible Home checks use the real Qt window/context and composition signals. When a native app is fullscreen, its independently verified foreground surface is relevant; a hidden Home timer is not video-frame or playback evidence.
 
@@ -22,6 +24,7 @@ Original LG resources, extracted executables, private wallpapers, and release-sp
 | `src/personalhome/operations/runtime/` | Startup, validation, installation, and recovery actors |
 | `src/personalhome/operations/` | Release preparation, controlled sessions, and runtime tests |
 | `src/personalhome/integration/` | Firmware-specific integration builder and QML adapter |
+| `src/personalhome/startup-bridge/` | Silent first-app cover, readiness service and offline tests |
 | `src/personalhome/diagnostics/` | Isolated compatibility probes and diagnostic helpers |
 | `src/personalhome/tests/` | Interface, integration, and recovery tests |
 | `tools/` | Repository-level development helpers |

@@ -10,8 +10,10 @@ function write(p,data,mode){var fd=fs.openSync(p,'wx',mode),bytes=Buffer.isBuffe
 function parents(p,base){var parts=p.slice(base.length+1).split('/'),cur=base;for(var i=0;i<parts.length-1;i++){cur+='/'+parts[i];if(!fs.existsSync(cur))fs.mkdirSync(cur,448);directory(cur);}}
 function command(cmd,args){var p=cp.spawnSync('/usr/bin/timeout',['-t','12',cmd].concat(args),{encoding:'utf8'});check(!p.error&&p.status===0,'Preflight command failed');return p.stdout;}
 function main(){
- check(process.argv.length===6&&process.argv[2]==='--install-validation-approved','Explicit physical-session approval required');
+ check((process.argv.length===6||process.argv.length===7)&&process.argv[2]==='--install-validation-approved','Explicit physical-session approval required');
  var stage=process.argv[3],expected=process.argv[4],mode=process.argv[5];
+ var sessionDeadline=process.argv.length===7?Number(process.argv[6]):null;
+ check(sessionDeadline===null||isFinite(sessionDeadline)&&Math.floor(sessionDeadline)===sessionDeadline&&sessionDeadline>Date.now()&&sessionDeadline<=Date.now()+1500000,'Invalid remaining session deadline');
  check(/^\/tmp\/personalhome-release\.[a-f0-9]{32}$/.test(stage)&&/^[a-f0-9]{64}$/.test(expected)&&['manual','boot-session'].indexOf(mode)>=0,'Invalid validation arguments');
  check(typeof process.getuid==='function'&&process.getuid()===0,'Root required');directory(stage);directory('/var/lib/webosbrew/init.d');
  var raw=file(stage+'/release.json');check(sha(raw)===expected,'Staging manifest differs');var m=JSON.parse(raw);
@@ -45,11 +47,11 @@ function main(){
  names.forEach(function(n){var p=base+'/release/'+n;parents(p,base+'/release');write(p,bytes[n],384);});write(base+'/release/release.json',raw,384);
  var hookText='#!/bin/sh\numask 077\n/usr/bin/node '+base+'/release/bootstrap.js --validate '+base+' < /dev/null >> '+base+'/boot.log 2>&1 &\n';
  write(base+'/installed.json',JSON.stringify({schema:1,nonce:m.nonce,releaseSha256:expected,bootHookSha256:sha(hookText),originalSha:originalSha,candidateSha:m.candidateSha,temporary:true,preservedModule:preserved})+'\n',384);
- var now=Date.now();write(base+'/authorization.json',JSON.stringify({nonce:m.nonce,releaseSha256:expected,issuedAt:now,expiresAt:now+14400000,maxBoots:24})+'\n',384);write(base+'/enabled','enabled\n',384);
+ var now=Date.now(),expiresAt=sessionDeadline===null?now+1500000:sessionDeadline,maxBoots=3;write(base+'/authorization.json',JSON.stringify({nonce:m.nonce,releaseSha256:expected,issuedAt:now,expiresAt:expiresAt,maxBoots:maxBoots})+'\n',384);write(base+'/enabled','enabled\n',384);
  if(preserved)fs.renameSync('/tmp/YSM',preserved);
  if(mode==='boot-session'){createdHook=hook;createdHookSha=sha(hookText);write(hook,hookText,448);}
  var log=fs.openSync(base+'/boot.log','a',384),child=cp.spawn('/usr/bin/node',[base+'/release/bootstrap.js','--validate',base],{detached:true,stdio:['ignore',log,log]});fs.closeSync(log);child.unref();
- console.log(JSON.stringify({temporary:true,activationRequested:true,physicalAcceptanceRequired:true,productionHomeStillDisabled:true,base:base,expiresAt:now+14400000,maxBoots:24,bootHook:mode==='boot-session'?hook:null,preservedModule:preserved}));
+ console.log(JSON.stringify({temporary:true,activationRequested:true,physicalAcceptanceRequired:true,productionHomeStillDisabled:true,base:base,expiresAt:expiresAt,maxBoots:maxBoots,recoveryReserveSeconds:300,bootHook:mode==='boot-session'?hook:null,preservedModule:preserved}));
 }
 try{main();}catch(error){
  if(createdBase){

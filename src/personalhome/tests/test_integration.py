@@ -37,8 +37,8 @@ class IntegrationBuildTests(unittest.TestCase):
             result = (target / 'module' / name).read_bytes()
             if result != original:
                 changed.append(name)
-        self.assertEqual(sorted(changed), ['YSM/SystemSettings.qml', 'YSM/YSM.qml'])
-        self.assertEqual(report['unchangedNativeResources'], 215)
+        self.assertEqual(sorted(changed), ['YSM/StarfishKeyFilter.qml', 'YSM/SystemSettings.qml', 'YSM/YSM.qml', 'YSM/compositor.js'])
+        self.assertEqual(report['unchangedNativeResources'], 213)
         self.assertFalse(report['tvExecuted'])
         self.assertFalse(report['runtimeQt56Validated'])
         self.assertEqual(hashlib.sha256(before).hexdigest(), builder.SOURCE_SHA)

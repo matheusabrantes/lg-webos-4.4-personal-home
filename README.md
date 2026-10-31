@@ -17,7 +17,7 @@ A custom Home experience inside LG's native compositor, with app shortcuts, pers
 </div>
 
 > [!IMPORTANT]
-> Experimental, with provisional use recorded on one television. Startup delays and incomplete recovery acceptance remain open. This is a source repository for development, with no general-purpose installer.
+> Experimental and validated on one television. Targeted Power and app-button wake checks passed; long standby, overnight stability and broader recovery coverage remain open. This is a source repository for development, with no general-purpose installer.
 
 ## Overview
 
@@ -64,7 +64,7 @@ Other LG models, firmware revisions, and webOS versions have not been verified. 
 
 The QML scene runs inside the existing native compositor. A firmware-specific adapter connects it to LG launchpoints and native services for apps, inputs, and system controls.
 
-The bootstrap validates the original executable and release hashes, waits for native readiness, and activates the custom scene. The recorded startup path requires a compositor restart after the original environment has started, which can delay Home and reveal the original LG interface first.
+The bootstrap validates the original executable and release hashes, waits for native readiness, and activates the custom scene through one guarded compositor restart. A silent first-app bridge covers startup until the native scene is composed and focused. Native Power handling waits for the wake-reason readiness stage; cold startup closes the otherwise unmanaged TV stream. See [startup reliability](docs/startup-reliability.md).
 
 Two recovery actors monitor ownership, identity, peer pulses, and visible-interface health. On failure, they attempt to remove their own overlay and restore the original compositor and a usable foreground. Restoring the executable alone does not prove that the TV is usable.
 
@@ -92,7 +92,7 @@ Follow [local development](docs/development.md) for preview setup, build prepara
 
 The original LG Home action, retained original executable, guarded overlay removal, and local watchdogs provide recovery paths. Installation and rollback validate release hashes, ownership, process identity, and mount state before acting.
 
-Two controlled recovery cases succeeded on the recorded TV. Complete recovery acceptance remains open: a later rollback restored the executable but reported an unusable interface. Cold startup and long standby also need further validation.
+The latest correction verified restoration of the original LG interface before the accepted installation, improving an earlier rollback that restored the executable without proving usability. Complete failure-mode coverage, long standby and overnight stability remain unverified.
 
 Use the [device safety guidance](docs/device-safety.md) and [recorded limitations](docs/status.md). Historical authorizations do not authorize a new device session.
 
@@ -106,23 +106,24 @@ Personal photos, SSH keys, connection settings, backups, and raw captures stay o
 
 ## Project Status
 
-Last recorded physical acceptance: **October 23, 2026**. These are historical results, not a claim about the TV's current state.
+Latest targeted physical validation: **October 31, 2026**. Earlier interface and selected playback evidence was recorded on October 23.
 
 | Area | Recorded state |
 | --- | --- |
 | Native integration | Rendered on the target compositor |
 | Visual interface | Six cards, transparent logos, wallpapers, and controls verified |
 | Application navigation | Remote/pointer verified; playback evidence covers only selected services |
-| Startup and standby | Delayed startup observed; long standby and overnight behavior unverified |
-| Recovery | Controlled cases passed; complete acceptance unresolved |
+| Startup and standby | Power from playing TV opens Home first without TV picture/audio; long standby and overnight behavior unverified |
+| Recovery | Original LG restoration verified; broader failure-mode coverage unverified |
 | Privacy hardening | Optional controls implemented; persistence and uploader behavior unresolved |
-| Permanent deployment | Provisional owner use; not ready for general deployment |
+| Permanent deployment | Enabled on the recorded owner's TV; other devices unverified |
 
 Read the [recorded status](docs/status.md) for the scope of physical testing and remaining limitations.
 
 ## Documentation
 
 - [Architecture](docs/architecture.md): QML, native integration, startup, and recovery.
+- [Startup reliability](docs/startup-reliability.md): first-app bridge, native Power handling, stream ownership and recovery.
 - [Local development](docs/development.md): offline checks, preview, build inputs, and private transport.
 - [Device safety](docs/device-safety.md): physical-session requirements and recovery constraints.
 - [Privacy](docs/privacy.md): implemented controls, observed behavior, and publication hygiene.
