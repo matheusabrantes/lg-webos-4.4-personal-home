@@ -1,5 +1,6 @@
 # Owner data and compatibility paths are local only.
 /.local/
+/docs/startup-attempts.md
 /work/*
 !/work/abrantesflix/
 /work/abrantesflix/*
@@ -16,6 +17,7 @@
 !/src/personalhome/recovery/
 !/src/personalhome/diagnostics/
 !/src/personalhome/operations/
+!/src/personalhome/startup-bridge/
 !/src/personalhome/privacy-hardening-20261022/
 !/src/personalhome/finalization-20261022/
 /src/personalhome/finalization-20261022/*
@@ -28,6 +30,10 @@
 /src/personalhome/**/*.log
 /src/personalhome/**/.gitignore
 /src/personalhome/**/*.txt
+!/src/personalhome/startup-bridge/appinfo.json
+!/src/personalhome/startup-bridge/service/package.json
+!/src/personalhome/startup-bridge/service/services.json
+!/src/personalhome/startup-bridge/README.md
 !/src/personalhome/qml/assets/*.txt
 /src/personalhome/**/private/
 /src/personalhome/**/native/

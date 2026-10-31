@@ -1,0 +1,5 @@
+{
+  "id": "com.personalhome.startup.service",
+  "description": "PersonalHome startup readiness",
+  "services": [{"name": "com.personalhome.startup.service"}]
+}

@@ -1,4 +1,5 @@
         property int trialSequence: 0
+        function runtimeWakeCount(value) { return typeof value==="number" && isFinite(value) && Math.floor(value)===value && value>=0 ? value : null; }
         property int runtimeFrameSequence: 0
         property int runtimeRenderProbe: 0
         property int runtimePendingProbe: 0
@@ -21,6 +22,7 @@
             interval:250;repeat:true;running:true
             onTriggered: {
                 var item=personalHomeLoader.item;
+                var wake=typeof ysm.personalHomePowerWake!=="undefined" ? ysm.personalHomePowerWake : null;
                 var attached=!!item && !!item.Window.contentItem;
                 var nativeContext=typeof compositor!=="undefined" && compositor!==null
                     && typeof compositorWindow!=="undefined" && compositorWindow!==null
@@ -53,6 +55,15 @@
                 uiScope.trialHealth.write(JSON.stringify({schema:3,nonce:"__NONCE__",sequence:++uiScope.trialSequence,
                     frameSequence:uiScope.runtimeFrameSequence,renderProbe:uiScope.runtimeRenderProbe,
                     foregroundRequestConsumed:uiScope.runtimeLaunchConsumed,foregroundRequestError:uiScope.runtimeLaunchError,
+                    nativePowerOffCount:uiScope.runtimeWakeCount(wake ? wake.nativeOffCount : null),
+                    nativePowerOnCount:uiScope.runtimeWakeCount(wake ? wake.nativeOnCount : null),
+                    powerWakeGeneration:uiScope.runtimeWakeCount(wake ? wake.generation : null),
+                    powerWakeSleeping:wake && typeof wake.sleeping==="boolean" ? wake.sleeping : null,
+                    powerWakeArmed:wake && typeof wake.armed==="boolean" ? wake.armed : null,
+                    powerWakeRequested:wake && typeof wake.requested==="boolean" ? wake.requested : null,
+                    powerWakeInterrupted:wake && typeof wake.interrupted==="boolean" ? wake.interrupted : null,
+                    powerWakeMappingHeld:wake && typeof wake.mappingHeld==="boolean" ? wake.mappingHeld : null,
+                    powerWakeReason:wake && ["empty","pending","remoteKey","amazon","other","invalid"].indexOf(wake.lastReason)>=0 ? wake.lastReason : null,
                     powerActive:personalHomeLoader.powerActive,coverOpen:ysm.coverUIOpen,overlayOpen:overlay,
                     focusRequired:uiScope.personalHomeShown && !overlay && !ysm.coverUIOpen,
                     foregroundAppId:compositor.fullscreen ? compositor.fullscreen.appId : "",

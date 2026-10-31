@@ -1,0 +1,21 @@
+'use strict';
+var assert=require('assert'),crypto=require('crypto'),policy=require('./runtime/policy'),tests=0;
+var base='/var/lib/personalhome',target='/var/luna/preferences/bootd.json';
+function sha(v){return crypto.createHash('sha256').update(v).digest('hex');}
+function fixture(){
+ var original=new Buffer('{"firstApp":"tv"}\n'),candidate=new Buffer('{"firstApp":"bridge"}\n'),files={},metadata={},renames=[],syncs=[];
+ files[base+'/startup-config.json']=new Buffer(JSON.stringify({schema:1,path:target,originalSha256:sha(original),candidateSha256:sha(candidate)}));
+ files[base+'/bootd-before.json']=original;files[target]=candidate;
+ function stat(p){var directory=p===base||p==='/var/luna/preferences';assert(directory||p in files,p);var m=metadata[p]||{};return {uid:m.uid===undefined?0:m.uid,nlink:m.nlink===undefined?1:m.nlink,mode:m.mode===undefined?(directory?448:384):m.mode,isSymbolicLink:function(){return !!m.symlink;},isFile:function(){return !directory;},isDirectory:function(){return directory;}};}
+ var fs={existsSync:function(p){return p in files;},lstatSync:stat,readFileSync:function(p){assert(p in files);return files[p];},writeFileSync:function(p,v,options){assert.equal(options.flag,'wx');assert.equal(options.mode,384);assert(!(p in files));files[p]=v;},openSync:function(p){return p;},closeSync:function(){},fsyncSync:function(p){syncs.push(p);},renameSync:function(a,b){renames.push([a,b]);files[b]=files[a];delete files[a];}};
+ return {fs:fs,files:files,metadata:metadata,original:original,candidate:candidate,renames:renames,syncs:syncs,restore:function(){return policy.restoreStartupConfig(fs,crypto,base);}};
+}
+function test(name,fn){fn();tests++;console.log('PASS '+name);}
+test('owned candidate boot config restores atomically with durable original bytes',function(){var f=fixture();assert.equal(f.restore(),true);assert.equal(sha(f.files[target]),sha(f.original));assert.equal(f.renames.length,1);assert.equal(f.renames[0][1],target);assert.equal(f.syncs.length,2);assert.equal(f.syncs[1],'/var/luna/preferences');assert.equal(f.restore(),false);assert.equal(f.renames.length,1);});
+test('missing optional contract preserves existing installations',function(){var f=fixture();delete f.files[base+'/startup-config.json'];assert.equal(f.restore(),false);assert.equal(sha(f.files[target]),sha(f.candidate));});
+test('foreign current bytes are preserved without a write',function(){var f=fixture();f.files[target]=new Buffer('foreign');assert.throws(f.restore,/Foreign startup config/);assert.equal(f.files[target].toString(),'foreign');assert.equal(f.renames.length,0);});
+test('corrupt backup cannot overwrite boot config',function(){var f=fixture();f.files[base+'/bootd-before.json']=new Buffer('corrupt');assert.throws(f.restore,/backup changed/);assert.equal(sha(f.files[target]),sha(f.candidate));});
+test('contract cannot select any other native config path',function(){var f=fixture(),p=base+'/startup-config.json',c=JSON.parse(f.files[p]);c.path='/etc/foreign';f.files[p]=new Buffer(JSON.stringify(c));assert.throws(f.restore,/Invalid startup config contract/);assert.equal(f.renames.length,0);});
+test('symlinks, hardlinks, foreign owners and writable paths fail closed',function(){[base,'/var/luna/preferences',base+'/startup-config.json',base+'/bootd-before.json',target].forEach(function(p){var f=fixture();f.metadata[p]={symlink:true};assert.throws(f.restore,/Unsafe startup config path/);f=fixture();f.metadata[p]={uid:501};assert.throws(f.restore,/Unsafe startup config path/);f=fixture();f.metadata[p]={mode:438};assert.throws(f.restore,/Unsafe startup config path/);});[base+'/startup-config.json',base+'/bootd-before.json',target].forEach(function(p){var f=fixture();f.metadata[p]={nlink:2};assert.throws(f.restore,/Unsafe startup config path/);});});
+test('a concurrent foreign config is preserved during the final identity check',function(){var f=fixture(),write=f.fs.writeFileSync;f.fs.writeFileSync=function(p,v,o){write(p,v,o);f.files[target]=new Buffer('new foreign config');};assert.throws(f.restore,/changed during restoration/);assert.equal(f.files[target].toString(),'new foreign config');assert.equal(f.renames.length,0);});
+console.log(JSON.stringify({passed:true,tests:tests,physicalActions:0,scope:'startup boot-config restoration in memory'}));

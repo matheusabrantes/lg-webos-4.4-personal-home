@@ -8,6 +8,7 @@ if(['primary','lifeline','restore'].indexOf(role)<0)fail('Unknown guard role');
 var ds=fs.lstatSync(dir), ms=fs.lstatSync(path);
 if(!ds.isDirectory()||ds.isSymbolicLink()||ds.uid!==0||(ds.mode&63)!==0||!ms.isFile()||ms.isSymbolicLink()||ms.uid!==0||(ms.mode&63)!==0)fail('Unsafe trial ownership/mode');
 var manifestBytes=fs.readFileSync(path),manifestHash=crypto.createHash('sha256').update(manifestBytes).digest('hex'),m=JSON.parse(manifestBytes.toString());
+if(m.startupBridge!==undefined&&typeof m.startupBridge!=='boolean')fail('Invalid startup bridge intent');
 if(m.healthSchema!==3||!/^[a-f0-9]{64}$/.test(m.guardSha)||!/^[a-f0-9]{64}$/.test(m.policySha)||typeof m.restoreHome!=='boolean'||!/^[a-f0-9-]{36}$/.test(m.bootId))fail('Missing runtime recovery contract');
 if(m.kind!=='native'||m.directory!==dir||m.failureRecoverySeconds!==120||typeof m.nonce!=='string'||!/^([a-f0-9]{32})$/.test(m.nonce)||m.deadline!==undefined)fail('Invalid production manifest');
 if(dir!=='/tmp/lg-native-production.'+m.nonce)fail('Runtime directory does not match nonce');
@@ -41,15 +42,34 @@ function write(name,value){
  fs.writeFileSync(temporary,JSON.stringify(value)+'\n',{mode:384,flag:'wx'});
  fs.renameSync(temporary,dir+'/'+name);
 }
-function log(event,extra){fs.appendFileSync(dir+'/guard-events.jsonl',JSON.stringify({role:role,event:event,uptime:uptime(),extra:extra||null})+'\n',{mode:384});}
+function appendEvent(p,line){
+ if(exists(p)){
+  var s=fs.lstatSync(p);if(!s.isFile()||s.isSymbolicLink()||s.uid!==0||(s.mode&63)!==0||s.nlink!==1)fail('Unsafe diagnostic file');
+  if(s.size>=16384){if(exists(p+'.1')){var old=fs.lstatSync(p+'.1');if(!old.isFile()||old.isSymbolicLink()||old.uid!==0||old.nlink!==1)fail('Unsafe diagnostic backup');}fs.renameSync(p,p+'.1');}
+ }
+ fs.appendFileSync(p,line,{mode:384});
+}
+function log(event,extra){
+ var line=JSON.stringify({role:role,event:event,bootId:m.bootId,nonce:m.nonce,uptime:uptime(),wallTimeMs:Date.now(),extra:extra||null})+'\n';
+ try{appendEvent(dir+'/guard-events.jsonl',line);}catch(error){}
+ if(['started','activation-switch-starting','activation-verified','foreground-restored','kernel-resume-observed','power-state-changed','failure','recovery-requested','startup-audio-quiet','disable-latch-failed','startup-hook-disabled','restored','restore-failed'].indexOf(event)>=0){
+  try{appendEvent(m.stateDirectory+'/guard-'+role+'-events.jsonl',line);}catch(error){}
+ }
+}
+function activationState(phase){
+ var p=m.stateDirectory+'/boot-activation.json',temporary=p+'.'+m.bootId+'.'+role+'.new';
+ fs.writeFileSync(temporary,JSON.stringify({schema:2,nonce:m.nonce,bootId:m.bootId,phase:phase})+'\n',{mode:384,flag:'wx'});
+ var fd=fs.openSync(temporary,'r');try{fs.fsyncSync(fd);}finally{fs.closeSync(fd);}fs.renameSync(temporary,p);
+ fd=fs.openSync(m.stateDirectory,'r');try{fs.fsyncSync(fd);}finally{fs.closeSync(fd);}
+}
 function run(command,args){pulse();if(command!=='/usr/bin/timeout'){args=['-t','12',command].concat(args);command='/usr/bin/timeout';}var r=cp.spawnSync(command,args,{encoding:'utf8'});pulse();if(r.error||r.status!==0)fail('Command failed: '+command+' '+JSON.stringify(args)+' '+r.stderr);return r.stdout;}
 function luna(method,args){
  var raw=run('/usr/bin/timeout',['-t','2','/usr/bin/luna-send','-n','1','-w','1000','luna://'+method,JSON.stringify(args||{})]);
- var result=JSON.parse(raw.slice(raw.indexOf('{')));if(result.returnValue!==true)fail('Native service rejected:'+method);return result;
+ var result=JSON.parse(raw.slice(raw.indexOf('{')));if(result.returnValue!==true){var error=Error('Native service rejected:'+method);error.nativeReply=result;throw error;}return result;
 }
 function readHealth(){try{return JSON.parse(fs.readFileSync(dir+'/health.json','utf8'));}catch(error){return null;}}
-function ensureForeground(app,custom,wantHome){
- var until=custom?JSON.parse(fs.readFileSync(dir+'/context-restore-needed.json','utf8')).until:uptime()+20,launched=false,homeRequested=false,seenApp='',seenProbe=-1,homeProbe=-1,visibleHomeProbe=-1,overlayProbe=-1;
+function ensureForeground(app,custom,wantHome,recoveryUntil){
+ var until=custom?JSON.parse(fs.readFileSync(dir+'/context-restore-needed.json','utf8')).until:recoveryUntil,launched=false,lastLaunch=-1,lastHome=-1,homeRequested=false,seenApp='',seenProbe=-1,homeProbe=-1,visibleHomeProbe=-1,overlayProbe=-1;
  while(uptime()<until){
   if(custom&&(exists(dir+'/abort.json')||exists(m.disableFile)))fail('Activation cancelled during foreground recovery');
   var h=custom?readHealth():null;
@@ -71,7 +91,7 @@ function ensureForeground(app,custom,wantHome){
     try{appUncovered=luna('com.webos.surfacemanager/getCurrentState').currentState==='none';}
     catch(nativeStateError){log('foreground-state-not-ready',String(nativeStateError));run('/bin/sleep',['1']);continue;}
    }
-   if(foreground&&appUncovered&&(foreground===app||custom&&h.keyEvents>0)&&!wantHome){
+   if(policy.recoveryAppId(foreground)&&appUncovered&&(foreground===app||custom&&h.keyEvents>0)&&!wantHome){
     if(!custom)return {appId:foreground,verified:true,custom:false};
     if(seenApp!==foreground){seenApp=foreground;seenProbe=uptime();}
     else if(uptime()-seenProbe>=1)return {appId:foreground,verified:true,custom:true,nativeSurfaceVerified:true,preLaunchRenderProbe:h.renderProbe};
@@ -81,9 +101,9 @@ function ensureForeground(app,custom,wantHome){
     try{if(luna('com.webos.surfacemanager/getCurrentState').currentState==='home')return {home:true,verified:true,custom:false};}
     catch(stateError){log('home-service-not-ready',String(stateError));run('/bin/sleep',['1']);continue;}
    }
-   if(wantHome&&!homeRequested&&(!custom||!h.shown)){homeProbe=custom?h.renderProbe:-1;homeRequested=true;try{luna('com.webos.service.networkinput/sendSpecialKey',{key:'HOME'});}catch(homeError){log('home-request-reply-missing',String(homeError));}}
-   else if(!launched&&!wantHome&&foreground!==app&&(!custom||!h.shown||h.keyEvents===0)){
-    launched=true;
+   if(wantHome&&(!homeRequested||!custom&&uptime()-lastHome>=3)&&(!custom||!h.shown)){homeProbe=custom?h.renderProbe:-1;homeRequested=true;lastHome=uptime();try{luna('com.webos.service.networkinput/sendSpecialKey',{key:'HOME'});}catch(homeError){log('home-request-reply-missing',String(homeError));}}
+   else if((!launched||!custom&&uptime()-lastLaunch>=3)&&!wantHome&&foreground!==app&&(!custom||!h.shown||h.keyEvents===0)){
+    launched=true;lastLaunch=uptime();
     if(custom)write('foreground-request.json',{nonce:m.nonce,appId:app});
     else try{luna('com.webos.applicationManager/launch',{id:app});}catch(error){log('foreground-launch-failed',String(error));}
    }else if(!custom&&!homeRequested&&uptime()>until-7){homeProbe=custom?h.renderProbe:-1;homeRequested=true;try{luna('com.webos.service.networkinput/sendSpecialKey',{key:'HOME'});}catch(homeError){log('home-request-reply-missing',String(homeError));}}
@@ -96,7 +116,7 @@ function apply(){
  if(exists(m.disableFile)||exists(dir+'/abort.json')||exists(dir+'/restored.json'))fail('Production disabled before apply');
  if(mounts().length||hash(m.target)!==m.originalSha)fail('Target changed before apply');
  var activation=JSON.parse(fs.readFileSync(m.stateDirectory+'/boot-activation.json','utf8'));
- if(activation.nonce!==m.nonce||activation.bootId!==m.bootId||activation.phase!=='prepared')fail('Startup transaction is not prepared');
+ if(activation.schema!==2||activation.nonce!==m.nonce||activation.bootId!==m.bootId||activation.phase!=='prepared')fail('Startup transaction is not prepared');
  var gate={},until=uptime()+75,snapshot;
  while(true){
   if(procIdentity(m.pid)!==m.processStart)fail('Original compositor changed before apply');
@@ -107,12 +127,21 @@ function apply(){
   if(policy.bootGate(gate,snapshot,String(m.pid)+':'+m.processStart))break;
   run('/bin/sleep',['1']);
  }
- m.restoreAppId=gate.app;m.restoreHome=snapshot.ui.currentState!=='none';
- write('foreground-intent.json',{nonce:m.nonce,appId:m.restoreAppId,home:m.restoreHome});
+ var intent=policy.bootIntent(snapshot);m.restoreAppId=intent.appId;m.restoreHome=intent.home;m.startupBridge=intent.bridge;
+ write('foreground-intent.json',{nonce:m.nonce,appId:m.restoreAppId,home:m.restoreHome,bridge:m.startupBridge,pending:true,until:uptime()+47});
+ if(m.startupBridge)policy.prepareStartupInput(fs,crypto,m.stateDirectory,m.nonce,luna);else policy.restoreStartupInput(fs,crypto,m.stateDirectory,m.nonce,luna);
+ if(m.startupBridge){
+  var input=cp.spawnSync('/usr/bin/timeout',['-t','2','/bin/pidof','com.webos.app.inputcommon'],{encoding:'utf8'}),inputRunning;
+  if(!input.error&&input.status===1&&input.stdout.trim()==='')inputRunning=false;
+  else if(!input.error&&input.status===0&&/^\d+(?:\s+\d+)*$/.test(input.stdout.trim()))inputRunning=true;
+  else fail('Native input process identity unavailable');
+  log('startup-audio-quiet',policy.quietStartupAudio(luna,m.bootId,function(){return fs.readFileSync('/proc/sys/kernel/random/boot_id','utf8').trim();},inputRunning));
+ }
  if(m.kind==='freeze'){
   if(procIdentity(m.pid)!==m.processStart||fs.readlinkSync('/proc/'+m.pid+'/exe')!==m.target)fail('Original process identity changed');
   process.kill(m.pid,'SIGSTOP');
  }else{
+  activationState('applying');log('activation-switch-starting');
   run('/bin/mount',['-n','--bind',m.candidate,m.target]);
   var entry=mounts();
   if(entry.length!==1||identity(m.target)!==m.candidateIdentity)fail('Mount was not applied as expected');
@@ -124,20 +153,36 @@ function apply(){
    var candidatePid=run('/bin/pidof',['surface-manager-starfish']).trim();
    if(!/^\d+$/.test(candidatePid)||procIdentity(candidatePid)===null)fail('Candidate compositor is not running');
    write('candidate-process.json',{pid:Number(candidatePid),start:procIdentity(candidatePid)});
+   if(m.startupBridge){try{luna('com.webos.applicationManager/launch',{id:policy.startupBridge,params:{boot:true}});}catch(launchError){log('startup-bridge-launch-reply-missing',String(launchError));}}
   }
  }
  write('applied.json',{uptime:uptime(),kind:m.kind});log('applied');
  write('context-restore-needed.json',{until:uptime()+35,appId:m.restoreAppId});
  var context=ensureForeground(m.restoreAppId,true,m.restoreHome);
  if(context.home&&!m.restoreHome&&!context.userOrNativeHomeIntent)fail('Requested app did not produce a usable foreground');
+ if(m.startupBridge&&!context.home)fail('Startup bridge requires composed focused Home');
+ if(!m.startupBridge)write('foreground-intent.json',{nonce:m.nonce,appId:m.restoreAppId,home:m.restoreHome,bridge:false,pending:false});
+ if(m.startupBridge){
+  var confirmationUntil=uptime()+16;write('context-restore-needed.json',{until:confirmationUntil,appId:m.restoreAppId});
+  if(policy.foreground(luna('com.webos.surfacemanager/getForegroundAppInfo'))!==policy.startupBridge)fail('Startup bridge has no actual foreground card');
+  write('foreground-intent.json',{nonce:m.nonce,appId:m.restoreAppId,home:m.restoreHome,bridge:true,pending:false});
+  var ackUntil=Math.min(uptime()+6,confirmationUntil),acknowledged=false;
+  while(uptime()<ackUntil){
+   var accepted=readHealth();
+   if(!policy.healthShape(accepted,m.nonce)||!accepted.ready||!accepted.powerActive||accepted.coverOpen||accepted.overlayOpen||!accepted.nativeContextAttached||!accepted.windowAttached||!accepted.shown||!accepted.visible||!accepted.activeFocus||accepted.renderProbe<context.renderProbe)fail('Home lost before startup readiness acknowledgment');
+   var reply;try{reply=luna('com.personalhome.startup.service/ready',{nonce:m.nonce});}
+   catch(serviceError){log('startup-readiness-service-not-ready',String(serviceError));run('/bin/sleep',['1']);continue;}
+   if(reply.nonce!==m.nonce||reply.ready!==true)fail('Invalid startup readiness acknowledgment');
+   acknowledged=true;break;
+  }
+  if(!acknowledged)fail('Startup readiness service did not accept current Home');
+  policy.restoreStartupInput(fs,crypto,m.stateDirectory,m.nonce,luna);
+ }
  write('context-restored.json',context);log('foreground-restored',context);
- var activationPath=m.stateDirectory+'/boot-activation.json',activationTemp=activationPath+'.verified-new';
- fs.writeFileSync(activationTemp,JSON.stringify({nonce:m.nonce,bootId:m.bootId,phase:'verified'})+'\n',{mode:384,flag:'wx'});
- var activationFd=fs.openSync(activationTemp,'r');try{fs.fsyncSync(activationFd);}finally{fs.closeSync(activationFd);}fs.renameSync(activationTemp,activationPath);
- activationFd=fs.openSync(m.stateDirectory,'r');try{fs.fsyncSync(activationFd);}finally{fs.closeSync(activationFd);}
+ activationState('verified');log('activation-verified',context);
 }
 function disableActivation(reason){
- var disabled=JSON.stringify({reason:reason,nonce:m.nonce,uptime:uptime()})+'\n';
+ var disabled=JSON.stringify({reason:reason,nonce:m.nonce,bootId:m.bootId,uptime:uptime(),wallTimeMs:Date.now()})+'\n';
  try{if(!exists(m.disableFile)){var fd=fs.openSync(m.disableFile,'wx',384);try{fs.writeSync(fd,disabled,0,'utf8');fs.fsyncSync(fd);}finally{fs.closeSync(fd);}}}catch(latchError){log('disable-latch-failed',String(latchError));}
  var hook=m.stateDirectory==='/var/lib/personalhome'?'/var/lib/webosbrew/init.d/90-personalhome':'/var/lib/webosbrew/init.d/89-personalhome-validation';
  try{if(exists(hook)){
@@ -150,10 +195,14 @@ function disableActivation(reason){
 }
 function restore(reason){
  if(exists(dir+'/restored.json'))return;
+ var recoveryUntil=uptime()+m.failureRecoverySeconds;
  disableActivation(reason);
- var intent={appId:m.restoreAppId,home:m.restoreHome};
- if(exists(dir+'/foreground-intent.json')){var savedIntent=JSON.parse(fs.readFileSync(dir+'/foreground-intent.json','utf8'));if(savedIntent.nonce===m.nonce&&policy.appId(savedIntent.appId)&&typeof savedIntent.home==='boolean')intent=savedIntent;}
- var recent=readHealth(),restoreApp=exists(dir+'/context-restored.json')&&recent&&recent.nonce===m.nonce&&policy.appId(recent.foregroundAppId)?recent.foregroundAppId:intent.appId;
+ try{if(policy.restoreStartupInput(fs,crypto,m.stateDirectory,m.nonce,luna))log('startup-input-restored');}catch(inputError){log('startup-input-preserved',String(inputError));}
+ try{if(policy.restoreStartupConfig(fs,crypto,m.stateDirectory))log('startup-config-restored');}catch(configError){log('startup-config-preserved',String(configError));}
+ var intent={appId:m.restoreAppId,home:m.restoreHome,bridge:m.startupBridge===true};
+ if(exists(dir+'/foreground-intent.json')){var savedIntent=JSON.parse(fs.readFileSync(dir+'/foreground-intent.json','utf8'));if(savedIntent.nonce===m.nonce&&policy.recoveryAppId(savedIntent.appId)&&typeof savedIntent.home==='boolean'&& (savedIntent.bridge===undefined||typeof savedIntent.bridge==='boolean'))intent=savedIntent;}
+ intent.nonce=m.nonce;intent.pending=false;write('foreground-intent.json',intent);
+ var recent=readHealth(),restoreApp=exists(dir+'/context-restored.json')&&recent&&recent.nonce===m.nonce&&policy.recoveryAppId(recent.foregroundAppId)?recent.foregroundAppId:intent.appId;
  if(hash(m.original)!==m.originalSha)fail('Original backup changed');
  var entries=mounts();
  if(entries.length){
@@ -177,13 +226,27 @@ function restore(reason){
   else run('/usr/bin/timeout',['-t','12','/sbin/restart','surface-manager']);
  }
  var foreground=null;
- try{foreground=ensureForeground(restoreApp,false,intent.home);}catch(error){log('foreground-recovery-incomplete',String(error));}
+ try{if(intent.bridge)ensureForeground('com.webos.app.livetv',false,false,recoveryUntil);foreground=ensureForeground(intent.bridge?'com.webos.app.livetv':restoreApp,false,intent.bridge||intent.home,recoveryUntil);}catch(error){log('foreground-recovery-incomplete',String(error));}
  write('restored.json',{reason:reason,uptime:uptime(),originalSha:hash(m.target),mountAbsent:mounts().length===0,foreground:foreground,usableInterface:!!foreground});log('restored',reason);
  ['primary','lifeline'].forEach(function(actor){
   try{if(exists(dir+'/'+actor+'-pid.json')){var peer=JSON.parse(fs.readFileSync(dir+'/'+actor+'-pid.json','utf8'));if(peer.pid!==process.pid&&procIdentity(peer.pid)===peer.start){process.kill(peer.pid,'SIGKILL');log('retired-peer',actor);}}}catch(peerError){log('peer-retirement-failed',String(peerError));}
  });
 }
-function abort(reason){if(!exists(dir+'/abort.json'))write('abort.json',{reason:reason});}
+function abort(reason){
+ if(exists(dir+'/abort.json'))return;
+ write('abort.json',{reason:reason});
+ try{
+  var h=readHealth()||{},health={};
+  ['shown','visible','activeFocus','ready','powerWakeSleeping','powerWakeArmed','powerWakeRequested','powerWakeInterrupted','powerWakeMappingHeld'].forEach(function(key){health[key]=typeof h[key]==='boolean'?h[key]:null;});
+  health.foregroundAppId=typeof h.foregroundAppId==='string'?h.foregroundAppId.slice(0,128):null;
+  ['keyEvents','lastKey','sequence','frameSequence','renderProbe'].forEach(function(key){health[key]=typeof h[key]==='number'&&isFinite(h[key])?h[key]:null;});
+  ['nativePowerOffCount','nativePowerOnCount','powerWakeGeneration'].forEach(function(key){health[key]=typeof h[key]==='number'&&isFinite(h[key])&&Math.floor(h[key])===h[key]&&h[key]>=0?h[key]:null;});
+  health.powerWakeReason=['empty','pending','remoteKey','amazon','other','invalid'].indexOf(h.powerWakeReason)>=0?h.powerWakeReason:null;
+  log('recovery-requested',{reason:typeof reason==='string'?reason.slice(0,128):'unknown',health:health,
+   nativePresentation:{appId:typeof presentationApp==='string'?presentationApp.slice(0,128):null,state:typeof presentationState==='string'?presentationState.slice(0,128):null,lastValid:lastPresentationValid},
+   power:{active:powerActive,lastValid:lastPowerValid}});
+ }catch(diagnosticError){}
+}
 function validViewHealth(h,initializing){
  var pendingLoader=initializing===true&&h&&h.focusIndex===-1&&h.moduleResolved===true
   &&h.componentInstantiated===false&&h.initialized===false&&h.windowAttached===false
@@ -200,7 +263,7 @@ function validViewHealth(h,initializing){
 }
 
 if(hash(dir+'/policy.js')!==m.policySha||hash(dir+'/guard.js')!==m.guardSha)fail('Recovery sources changed');
-var policy=require(dir+'/policy.js');if(!policy.appId(m.restoreAppId))fail('Invalid recovery app');
+var policy=require(dir+'/policy.js');if(!policy.recoveryAppId(m.restoreAppId))fail('Invalid recovery app');
 if(hash(m.original)!==m.originalSha||(role!=='restore'&&(hash(m.candidate)!==m.candidateSha||identity(m.candidate)!==m.candidateIdentity)))fail('Sources changed');
 write(role+'-pid.json',{pid:process.pid,start:procIdentity(process.pid)});log('started');
 if(role==='restore'){restore('host-request');process.exit(0);}
@@ -232,7 +295,7 @@ var timer=setInterval(function(){
   var bootNow=uptime(),monoNow=monotonic();
   if(bootNow-observedBootTime-(monoNow-observedMonotonic)>1){
    resumeUntil=bootNow+20;lastHealth=bootNow;peerSeen=bootNow;probePending=0;runtimeHealth={};lastPower=0;
-   log('kernel-resume-observed');
+   log('kernel-resume-observed',{suspendedSeconds:Math.round(bootNow-observedBootTime-(monoNow-observedMonotonic))});
   }
   observedBootTime=bootNow;observedMonotonic=monoNow;
   pulse();
@@ -283,6 +346,7 @@ var timer=setInterval(function(){
      lastPower=now;
      try{var power=luna('com.webos.service.tvpower/power/getPowerState');if(['Active','Suspend','Active Standby','Screen Off'].indexOf(power.state)<0)fail('Unknown power state');var active=power.state==='Active';
       if(active&&powerActive===false){resumeUntil=now+20;lastHealth=now;probePending=0;runtimeHealth={};}
+      if(powerActive!==active)log('power-state-changed',{fromActive:powerActive,state:power.state});
       powerActive=active;lastPowerValid=now;
      }catch(error){if(now-lastPowerValid>20)abort('power-service-unavailable');}
     }
@@ -295,10 +359,10 @@ var timer=setInterval(function(){
        var card=policy.foreground(luna('com.webos.surfacemanager/getForegroundAppInfo'));
        var nativeState=luna('com.webos.surfacemanager/getCurrentState').currentState;
        presentationApp=card;presentationState=nativeState;lastPresentationValid=uptime();
-       write('presentation-verified.json',{appId:card,uiState:nativeState,uptime:lastPresentationValid,nativeSurfaceVerified:!!card});
+       write('presentation-verified.json',{appId:card,uiState:nativeState,uptime:lastPresentationValid,nativeSurfaceVerified:policy.recoveryAppId(card)});
       }catch(presentationError){log('presentation-service-not-ready',String(presentationError));}
      }
-     external=!!presentationApp&&presentationState==='none'&&now-lastPresentationValid<=6;
+     external=policy.recoveryAppId(presentationApp)&&presentationState==='none'&&now-lastPresentationValid<=6;
      if(wasExternal&&!external){lastHealth=now;resumeUntil=Math.max(resumeUntil,now+5);probePending=0;}
      wasExternal=external;
     }
